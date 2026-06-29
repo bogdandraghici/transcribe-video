@@ -92,6 +92,12 @@ def _compute_winners(lines: list[ParsedLine], spans, segments: list[dict]):
 
 
 def home_clusters(lines: list[ParsedLine], winners: dict) -> dict[str, str]:
+    """Map each Gemini label to the acoustic cluster winning the most of its turns.
+
+    Ties (clusters with equal win counts) resolve to the first-seen cluster via
+    Counter.most_common — deterministic in turn (reading) order; affects only which
+    of two equally-split turns carries a reattr flag, never the relabel itself.
+    """
     by_label: dict[str, Counter] = defaultdict(Counter)
     for i, (raw, conf, ranked) in winners.items():
         if raw is not None:
@@ -136,6 +142,11 @@ def reconcile(body: str, segments: list[dict], media_duration: float) -> str:
         new_num = cmap[raw_speaker]
         flags: list[str] = []
 
+        # Flag reattribution when this turn's winning cluster differs from the
+        # majority acoustic cluster for its Gemini label (home cluster) — NOT a
+        # literal Gemini-vs-acoustic identity check. This deliberately suppresses
+        # spurious flags from pyannote merely numbering a cluster differently than
+        # Gemini, flagging only genuine intra-label disagreement. Do not "simplify".
         home = homes.get(ln.label)
         if home is not None and raw_speaker != home:
             flags.append(f"reattr gemini=S{ln.label_num} conf={conf:.2f}")
