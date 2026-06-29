@@ -31,5 +31,28 @@ class TestParseLines(unittest.TestCase):
         self.assertEqual(dr._fmt_ts(3661), "[01:01:01]")
 
 
+class TestOverlap(unittest.TestCase):
+    def test_overlap_basic(self):
+        self.assertEqual(dr.overlap(0, 10, 5, 15), 5)
+        self.assertEqual(dr.overlap(0, 10, 10, 20), 0)
+        self.assertEqual(dr.overlap(0, 10, 20, 30), 0)
+
+    def test_winner_picks_dominant_speaker(self):
+        segs = [
+            {"start": 0, "end": 8, "speaker": "SPEAKER_00"},
+            {"start": 8, "end": 10, "speaker": "SPEAKER_01"},
+        ]
+        winner, conf, ranked = dr.winner_for_span(0, 10, segs)
+        self.assertEqual(winner, "SPEAKER_00")
+        self.assertAlmostEqual(conf, 0.8)
+        self.assertEqual(ranked[0], ("SPEAKER_00", 8))
+
+    def test_winner_no_coverage(self):
+        winner, conf, ranked = dr.winner_for_span(0, 10, [])
+        self.assertIsNone(winner)
+        self.assertEqual(conf, 0.0)
+        self.assertEqual(ranked, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -55,3 +55,20 @@ def parse_lines(body: str) -> list[ParsedLine]:
             out.append(ParsedLine(raw=raw, ts=None, label=None,
                                   label_num=None, gender=None, text=None))
     return out
+
+
+def overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    return max(0.0, min(a1, b1) - max(a0, b0))
+
+
+def winner_for_span(start: float, end: float, segments: list[dict]):
+    totals: dict[str, float] = {}
+    for seg in segments:
+        ov = overlap(start, end, seg["start"], seg["end"])
+        if ov > 0:
+            totals[seg["speaker"]] = totals.get(seg["speaker"], 0.0) + ov
+    if not totals:
+        return None, 0.0, []
+    ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+    dur = max(1e-9, end - start)
+    return ranked[0][0], ranked[0][1] / dur, ranked
