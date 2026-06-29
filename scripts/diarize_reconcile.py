@@ -147,3 +147,10 @@ def reconcile(body: str, segments: list[dict], media_duration: float) -> str:
 
         out.append(_render_line(ln, new_num, flags))
     return "\n".join(out)
+
+
+def roster_speaker_count(roster: str | None) -> int | None:
+    if not roster:
+        return None
+    nums = {int(n) for n in re.findall(r"Speaker\s+(\d+)", roster)}
+    return len(nums) or None

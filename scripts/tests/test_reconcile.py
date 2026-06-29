@@ -155,5 +155,17 @@ class TestReconcile(unittest.TestCase):
         self.assertEqual(out[1], "[00:00:00] Speaker 1: fara segmente")
 
 
+class TestRosterCount(unittest.TestCase):
+    def test_counts_distinct_speakers(self):
+        self.assertEqual(
+            dr.roster_speaker_count("Speaker 1 = Bogdan (designer); Speaker 2 = Ana (PM)"),
+            2)
+
+    def test_none_and_empty(self):
+        self.assertIsNone(dr.roster_speaker_count(None))
+        self.assertIsNone(dr.roster_speaker_count(""))
+        self.assertIsNone(dr.roster_speaker_count("just some free text"))
+
+
 if __name__ == "__main__":
     unittest.main()
