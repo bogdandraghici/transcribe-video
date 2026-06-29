@@ -120,5 +120,40 @@ class TestClusterMaps(unittest.TestCase):
         self.assertEqual(cmap, {"SPEAKER_00": 1, "SPEAKER_02": 2})
 
 
+class TestReconcile(unittest.TestCase):
+    def test_relabels_and_flags_reattribution(self):
+        # Gemini stapled the 2nd turn to Speaker 1, but acoustically it's a 2nd voice.
+        body = ("[00:00:00] Speaker 1: intrebare\n"
+                "[00:00:10] Speaker 1: raspuns lung de la alta persoana")
+        segs = [
+            {"start": 0, "end": 10, "speaker": "SPEAKER_00"},
+            {"start": 10, "end": 30, "speaker": "SPEAKER_01"},
+        ]
+        out = dr.reconcile(body, segs, media_duration=30.0).splitlines()
+        self.assertEqual(out[0], "[00:00:00] Speaker 1: intrebare")
+        self.assertTrue(out[1].startswith("[00:00:10] Speaker 2 ‹reattr gemini=S1 conf=1.00›:"))
+
+    def test_preserves_gender_tag(self):
+        body = "[00:00:00] Speaker 1 (f): salut"
+        segs = [{"start": 0, "end": 5, "speaker": "SPEAKER_00"}]
+        out = dr.reconcile(body, segs, 5.0)
+        self.assertEqual(out, "[00:00:00] Speaker 1 (f): salut")
+
+    def test_mixed_turn_flag(self):
+        body = "[00:00:00] Speaker 1: doi vorbitori in acelasi rand"
+        segs = [
+            {"start": 0, "end": 5, "speaker": "SPEAKER_00"},
+            {"start": 5, "end": 10, "speaker": "SPEAKER_01"},
+        ]
+        out = dr.reconcile(body, segs, 10.0)
+        self.assertIn("‹mixed S1/S2›", out)
+
+    def test_passthrough_and_no_coverage(self):
+        body = "# header\n[00:00:00] Speaker 1: fara segmente"
+        out = dr.reconcile(body, [], media_duration=10.0).splitlines()
+        self.assertEqual(out[0], "# header")
+        self.assertEqual(out[1], "[00:00:00] Speaker 1: fara segmente")
+
+
 if __name__ == "__main__":
     unittest.main()

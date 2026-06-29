@@ -105,3 +105,45 @@ def first_appearance_map(segments: list[dict]) -> dict[str, int]:
         if seg["speaker"] not in seen:
             seen.append(seg["speaker"])
     return {raw: n + 1 for n, raw in enumerate(seen)}
+
+
+MIXED_TURN_THRESHOLD = 0.60
+
+
+def _render_line(ln: ParsedLine, new_num: int, flags: list[str]) -> str:
+    gender = f" ({ln.gender})" if ln.gender else ""
+    flag = f" ‹{'; '.join(flags)}›" if flags else ""
+    return f"{_fmt_ts(ln.ts)} Speaker {new_num}{gender}{flag}: {ln.text}"
+
+
+def reconcile(body: str, segments: list[dict], media_duration: float) -> str:
+    lines = parse_lines(body)
+    spans = assign_spans(lines, media_duration)
+    winners = _compute_winners(lines, spans, segments)
+    homes = home_clusters(lines, winners)
+    cmap = first_appearance_map(segments)
+
+    out: list[str] = []
+    for idx, ln in enumerate(lines):
+        if ln.ts is None or idx not in winners:
+            out.append(ln.raw)
+            continue
+        raw_speaker, conf, ranked = winners[idx]
+        if raw_speaker is None:
+            out.append(ln.raw)  # no acoustic coverage — leave Gemini's label
+            continue
+
+        new_num = cmap[raw_speaker]
+        flags: list[str] = []
+
+        home = homes.get(ln.label)
+        if home is not None and raw_speaker != home:
+            flags.append(f"reattr gemini=S{ln.label_num} conf={conf:.2f}")
+
+        if conf < MIXED_TURN_THRESHOLD and len(ranked) >= 2:
+            top2 = "/".join(f"S{cmap[r]}" for r, _ in ranked[:2] if r in cmap)
+            if "/" in top2:
+                flags.append(f"mixed {top2}")
+
+        out.append(_render_line(ln, new_num, flags))
+    return "\n".join(out)
