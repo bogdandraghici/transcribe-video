@@ -56,5 +56,25 @@ class TestOverlap(unittest.TestCase):
         self.assertEqual(ranked, [])
 
 
+class TestAssignSpans(unittest.TestCase):
+    def test_spans_chain_to_next_timestamp(self):
+        body = "[00:00:00] Speaker 1: a\n[00:00:10] Speaker 2: b"
+        lines = dr.parse_lines(body)
+        spans = dr.assign_spans(lines, media_duration=25.0)
+        self.assertEqual(spans, [(0, 0.0, 10.0), (1, 10.0, 25.0)])
+
+    def test_continuation_line_makes_no_span(self):
+        body = "[00:00:00] Speaker 1: a\nfara timestamp\n[00:00:10] Speaker 2: b"
+        lines = dr.parse_lines(body)
+        spans = dr.assign_spans(lines, media_duration=20.0)
+        self.assertEqual(spans, [(0, 0.0, 10.0), (2, 10.0, 20.0)])
+
+    def test_same_second_turns_get_minimum_span(self):
+        body = "[00:00:05] Speaker 1: a\n[00:00:05] Speaker 2: b"
+        lines = dr.parse_lines(body)
+        spans = dr.assign_spans(lines, media_duration=30.0)
+        self.assertEqual(spans[0], (0, 5.0, 6.0))
+
+
 if __name__ == "__main__":
     unittest.main()

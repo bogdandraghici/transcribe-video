@@ -72,3 +72,15 @@ def winner_for_span(start: float, end: float, segments: list[dict]) -> tuple[str
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     dur = max(1e-9, end - start)
     return ranked[0][0], ranked[0][1] / dur, ranked
+
+
+def assign_spans(lines: list[ParsedLine], media_duration: float) -> list[tuple[int, float, float]]:
+    ts_idx = [i for i, ln in enumerate(lines) if ln.ts is not None]
+    spans: list[tuple[int, float, float]] = []
+    for k, i in enumerate(ts_idx):
+        start = lines[i].ts
+        end = lines[ts_idx[k + 1]].ts if k + 1 < len(ts_idx) else media_duration
+        if end <= start:
+            end = start + 1.0
+        spans.append((i, start, end))
+    return spans
