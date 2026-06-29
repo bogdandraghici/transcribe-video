@@ -1,0 +1,4 @@
+scripts/.venv/
+scripts/.venv-diarize/
+__pycache__/
+*.pyc
