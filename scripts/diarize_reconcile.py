@@ -61,7 +61,7 @@ def overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
-def winner_for_span(start: float, end: float, segments: list[dict]):
+def winner_for_span(start: float, end: float, segments: list[dict]) -> tuple[str | None, float, list[tuple[str, float]]]:
     totals: dict[str, float] = {}
     for seg in segments:
         ov = overlap(start, end, seg["start"], seg["end"])

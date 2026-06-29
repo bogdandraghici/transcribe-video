@@ -46,6 +46,8 @@ class TestOverlap(unittest.TestCase):
         self.assertEqual(winner, "SPEAKER_00")
         self.assertAlmostEqual(conf, 0.8)
         self.assertEqual(ranked[0], ("SPEAKER_00", 8))
+        self.assertEqual(ranked[1], ("SPEAKER_01", 2))
+        self.assertEqual(len(ranked), 2)
 
     def test_winner_no_coverage(self):
         winner, conf, ranked = dr.winner_for_span(0, 10, [])
