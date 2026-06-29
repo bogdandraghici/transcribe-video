@@ -8,6 +8,7 @@ time span, relabels by first-appearance order, and flags contested/merged turns.
 from __future__ import annotations
 
 import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 
@@ -84,3 +85,23 @@ def assign_spans(lines: list[ParsedLine], media_duration: float) -> list[tuple[i
             end = start + 1.0
         spans.append((i, start, end))
     return spans
+
+
+def _compute_winners(lines: list[ParsedLine], spans, segments: list[dict]):
+    return {i: winner_for_span(s, e, segments) for (i, s, e) in spans}
+
+
+def home_clusters(lines: list[ParsedLine], winners: dict) -> dict[str, str]:
+    by_label: dict[str, Counter] = defaultdict(Counter)
+    for i, (raw, conf, ranked) in winners.items():
+        if raw is not None:
+            by_label[lines[i].label][raw] += 1
+    return {label: ctr.most_common(1)[0][0] for label, ctr in by_label.items()}
+
+
+def first_appearance_map(segments: list[dict]) -> dict[str, int]:
+    seen: list[str] = []
+    for seg in sorted(segments, key=lambda s: s["start"]):
+        if seg["speaker"] not in seen:
+            seen.append(seg["speaker"])
+    return {raw: n + 1 for n, raw in enumerate(seen)}

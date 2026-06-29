@@ -76,5 +76,49 @@ class TestAssignSpans(unittest.TestCase):
         self.assertEqual(spans[0], (0, 5.0, 6.0))
 
 
+class TestClusterMaps(unittest.TestCase):
+    def _setup(self):
+        body = ("[00:00:00] Speaker 1: a\n"
+                "[00:00:10] Speaker 1: b\n"
+                "[00:00:20] Speaker 2: c")
+        lines = dr.parse_lines(body)
+        segs = [
+            {"start": 0, "end": 10, "speaker": "SPEAKER_05"},   # turn @0  -> 05
+            {"start": 10, "end": 20, "speaker": "SPEAKER_09"},  # turn @10 -> 09
+            {"start": 20, "end": 40, "speaker": "SPEAKER_05"},  # turn @20 -> 05
+        ]
+        spans = dr.assign_spans(lines, 40.0)
+        winners = dr._compute_winners(lines, spans, segs)
+        return lines, spans, winners
+
+    def test_home_cluster_is_majority(self):
+        lines, spans, winners = self._setup()
+        homes = dr.home_clusters(lines, winners)
+        # Speaker 1 spoke at 0 (05) and 10 (09) -> tie broken by count/order -> 05 or 09;
+        # Speaker 2 spoke at 20 (05).
+        self.assertEqual(homes["Speaker 2"], "SPEAKER_05")
+        self.assertIn(homes["Speaker 1"], {"SPEAKER_05", "SPEAKER_09"})
+
+    def test_first_appearance_numbering(self):
+        segs = [
+            {"start": 0, "end": 10, "speaker": "SPEAKER_05"},
+            {"start": 10, "end": 20, "speaker": "SPEAKER_09"},
+            {"start": 20, "end": 40, "speaker": "SPEAKER_05"},
+        ]
+        cmap = dr.first_appearance_map(segs)
+        # Ordered by first segment start: SPEAKER_05 (t=0) then SPEAKER_09 (t=10).
+        self.assertEqual(cmap["SPEAKER_05"], 1)
+        self.assertEqual(cmap["SPEAKER_09"], 2)
+
+    def test_first_appearance_includes_non_winners(self):
+        # SPEAKER_02 never wins a span but must still get a stable id.
+        segs = [
+            {"start": 0, "end": 9, "speaker": "SPEAKER_00"},
+            {"start": 9, "end": 10, "speaker": "SPEAKER_02"},
+        ]
+        cmap = dr.first_appearance_map(segs)
+        self.assertEqual(cmap, {"SPEAKER_00": 1, "SPEAKER_02": 2})
+
+
 if __name__ == "__main__":
     unittest.main()
