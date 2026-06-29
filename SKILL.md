@@ -40,7 +40,10 @@ maps `Speaker N` → `P/F/B/O` itself.
 1. **ffmpeg + ffprobe** on PATH (`which ffmpeg ffprobe`). Install with `brew install ffmpeg` if missing.
 2. **A Gemini API key.** The script reads `$GEMINI_API_KEY`, or accepts `--api-key`.
    If the user only has it as `$GOOGLE_API_KEY` or pasted inline, pass it via `--api-key`.
-3. **The recording must be a real file on disk** — get its absolute path. A cloud/Drive
+3. **(Only for `--diarize`) A HuggingFace token** with `pyannote/speaker-diarization-3.1`
+   and `pyannote/segmentation-3.0` accepted on their model pages. The script reads
+   `$HF_TOKEN`, then `--hf-token`, then `~/.hf_token.env`. Not needed for plain transcription.
+4. **The recording must be a real file on disk** — get its absolute path. A cloud/Drive
    link cannot be read.
 
 `google-genai` is installed automatically into a local `.venv` (next to the script) on
@@ -81,6 +84,23 @@ Useful flags:
   confusion same-voice diarization gets wrong. It does **not** separate two same-gender
   speakers (use timing + content for that). Pair it with `--speakers`. meetinginsights
   requests it automatically for cross-gender casts and uses the tag as a reconciliation prior.
+- `--diarize` — overlay **acoustic** diarization (pyannote.audio voice embeddings) on the
+  full recording and **relabel speakers by voice**. This is the robust fix for **same-gender**
+  confusion that `--voice-attrs` can't touch: it clusters who-spoke purely acoustically
+  (language-agnostic), independent of content, then reassigns each Gemini turn to the
+  voice that dominates its time span. Because pyannote runs on the **whole file** (not
+  per-chunk), speaker IDs are **globally stable** — this also removes the chunk-boundary
+  label-reset caveat. Contested lines are flagged, not silently forced:
+  `‹reattr gemini=Sx conf=c›` (acoustic moved the line off Gemini's label x) and
+  `‹mixed Sx/Sy›` (the turn's audio spans two speakers — review by listening). Pair it with
+  `--speakers` (the roster count seeds pyannote's speaker count) and `--voice-attrs` (an
+  independent cross-check). `--diarize-device mps` uses Apple-Silicon GPU; default is `cpu`.
+  **Setup (one-time):** a free HuggingFace token, with the gated models
+  `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0` accepted on their model
+  pages; store the token in `~/.hf_token.env` (or `$HF_TOKEN` / `--hf-token`). On first use
+  the script builds a separate `.venv-diarize` (torch + pyannote, ~1–2 GB) — the light
+  transcription venv is untouched. If diarization can't run, you still get the plain Gemini
+  transcript plus a warning.
 
 For a **cheap sanity check** on a long/unfamiliar recording, transcribe just the start
 first: trim with `ffmpeg -y -i in.mp4 -t 300 -c copy clip.mp4`, run the script on
@@ -98,6 +118,11 @@ first: trim with `ffmpeg -y -i in.mp4 -t 300 -c copy clip.mp4`, run the script o
 - **Speaker numbers may reset between chunks** (Gemini renumbers per call). The output
   header flags this; meetinginsights' speaker reconciliation handles it downstream. For a
   single-chunk (≤20 min) recording, labels are consistent throughout.
+- With `--diarize`, a separate pyannote pass runs on the **full** audio and its acoustic
+  speaker turns are reconciled against Gemini's turns by time-overlap (`scripts/diarize.py`
+  produces the segments; `scripts/diarize_reconcile.py` does the pure-Python overlap +
+  relabel + flagging). Acoustic labels are globally stable, so the chunk-reset note above
+  does not apply when `--diarize` is on.
 
 ## After transcribing
 

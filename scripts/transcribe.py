@@ -64,6 +64,30 @@ ensure_deps()
 from google import genai           # noqa: E402
 from google.genai import types     # noqa: E402
 
+import diarize_reconcile  # noqa: E402  (same dir; on sys.path when run as a script)
+
+
+def run_diarizer(audio: Path, num_speakers: int | None, device: str,
+                 hf_token: str | None = None):
+    """Shell out to diarize.py; return segment list, or None on any failure."""
+    here = Path(__file__).resolve().parent
+    cmd = [sys.executable, str(here / "diarize.py"), str(audio), "--device", device]
+    if num_speakers:
+        cmd += ["--num-speakers", str(num_speakers)]
+    if hf_token:
+        cmd += ["--hf-token", hf_token]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"⚠ acoustic diarization failed; keeping Gemini's speaker labels.\n"
+              f"{r.stderr.strip()}", file=sys.stderr)
+        return None
+    try:
+        return json.loads(r.stdout)
+    except json.JSONDecodeError:
+        print("⚠ diarization output was not valid JSON; keeping Gemini's labels.",
+              file=sys.stderr)
+        return None
+
 
 CHUNK_DEFAULT_MIN = 20
 DEFAULT_MODEL = "gemini-2.5-pro"
@@ -271,6 +295,12 @@ def main():
                     help="tag each line with perceived voice gender (m)/(f)/(?) — a strong "
                          "prior for separating speakers in cross-gender casts (judged per "
                          "turn, independent of the speaker label, so it flags mislabels)")
+    ap.add_argument("--diarize", action="store_true",
+                    help="overlay acoustic (pyannote) diarization on the full audio and "
+                         "relabel speakers by voice, flagging contested/merged turns — "
+                         "the robust fix for same-gender speaker confusion")
+    ap.add_argument("--diarize-device", default="cpu", choices=["cpu", "mps"],
+                    help="device for pyannote (default cpu; mps = Apple-Silicon GPU)")
     ap.add_argument("-o", "--out", type=Path, default=None,
                     help="output path (default <video>.transcript.txt)")
     args = ap.parse_args()
@@ -300,6 +330,7 @@ def main():
 
     workdir = Path(tempfile.mkdtemp(prefix="transcribe_"))
     pieces: list[str] = []
+    diarized_ok = False
     try:
         for i in range(n_chunks):
             start = i * chunk_secs
@@ -314,6 +345,23 @@ def main():
             pieces.append(reoffset(raw, start, dur))
             if args.keep_audio:
                 shutil.copy(audio, args.video.parent / audio.name)
+
+        body = "\n\n".join(pieces) if n_chunks > 1 else pieces[0]
+
+        if args.diarize:
+            diar_audio = workdir / "full_for_diarization.flac"
+            print("· extracting full audio for acoustic diarization…", file=sys.stderr)
+            extract_audio(args.video, diar_audio)  # whole file, not a chunk slice
+            n_spk = diarize_reconcile.roster_speaker_count(args.speakers)
+            if n_spk:
+                print(f"· diarizing with num_speakers={n_spk} (from roster)…",
+                      file=sys.stderr)
+            segments = run_diarizer(diar_audio, n_spk, args.diarize_device)
+            if segments:
+                body = diarize_reconcile.reconcile(body, segments, duration)
+                diarized_ok = True
+                print("· acoustic diarization applied — speaker labels relabeled by "
+                      "voice; contested turns flagged.", file=sys.stderr)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -329,13 +377,21 @@ def main():
         header += ("# Per-line voice gender tag after the label: (m) male, (f) female, "
                    "(?) unclear — perceived per turn, independent of the Speaker label; "
                    "a tag that disagrees with its label flags a likely diarization slip.\n")
-    if n_chunks > 1:
+    if diarized_ok:
+        header += (
+            "# Acoustic diarization: pyannote/speaker-diarization-3.1. Speaker labels are "
+            "acoustic clusters (stable across the whole recording), ordered by first "
+            "appearance.\n"
+            "# Flag legend: ‹reattr gemini=Sx conf=c› = acoustic reassigned this line off "
+            "Gemini's label x (confidence c); ‹mixed Sx/Sy› = the turn's audio spans >1 "
+            "speaker (likely a merged turn — review by listening).\n"
+        )
+    elif n_chunks > 1:
         header += (
             "# NOTE: speaker labels may reset at chunk boundaries "
             f"(~{int(chunk_secs/60)} min); reconcile downstream.\n"
         )
 
-    body = "\n\n".join(pieces) if n_chunks > 1 else pieces[0]
     out_path.write_text(header + "\n" + body + "\n", encoding="utf-8")
     print(f"✓ wrote {out_path}", file=sys.stderr)
 
